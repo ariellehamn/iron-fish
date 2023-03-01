@@ -23,8 +23,10 @@ type TestNodeConfig = {
   port: string
   data_dir: string
   netword_id: number
+  //   miner: boolean
 }
-class TestNode {
+
+export class TestNode {
   // holds node process
   proc: ChildProcessWithoutNullStreams
 
@@ -57,13 +59,22 @@ class TestNode {
       config.netword_id.toString()
 
     this.proc = this.start(args)
+    console.log(`started node: ${this.name}`)
+  }
+
+  setup(): void {
+    return
+  }
+
+  attachMiner(): void {
+    return
   }
 
   // TODO: if fails to start, return err?
   start(args: string): ChildProcessWithoutNullStreams {
-    // TODO: typescript this
+    // TODO: how in the world do you typescript this
     const proc = spawn(this.rootCmd, args.split(' '))
-    proc.stdout.on('data', (data: any) => {
+    proc.stdout.on('data', (data) => {
       console.log(`[${this.name}]: ${data}`)
     })
 
@@ -71,11 +82,22 @@ class TestNode {
       console.log(`[${this.name}:stderr]: ${data}`)
     })
 
-    proc.on('error', (error: any) => {
+    proc.on('error', (error: Error) => {
       console.log(`[${this.name}:error]: ${error.message}`)
     })
 
-    proc.on('close', (code: any) => {
+    proc.on('exit', (code, signal) => {
+      if (!code || !signal) {
+        return
+      }
+
+      console.log(`spawn on exit code: ${code} signal: ${signal}`)
+    })
+    proc.on('close', (code: number | null) => {
+      if (!code) {
+        return
+      }
+
       console.log(`[${this.name}:close]: child process exited with code ${code}`)
     })
 
@@ -84,6 +106,11 @@ class TestNode {
 
   // help i'm alive
   alive(): boolean {
+    console.log('?')
+    if (this.proc === undefined || this.proc === null) {
+      console.log('why is proc null')
+      return false
+    }
     return this.proc.exitCode === null
   }
 
@@ -106,59 +133,77 @@ class TestNode {
   }
 }
 
-export default class Spawn extends IronfishCommand {
-  static description = 'Spawn a test network'
+export default class Start extends IronfishCommand {
+  static description = 'Start the test network'
 
   async start(): Promise<void> {
     await this.sdk.connectRpc()
 
-    const config = [
-      {
-        name: 'node1',
-        graffiti: '1',
-        port: '8001',
-        data_dir: '~/.ironfish_atf/node1',
-        netword_id: 2,
-      },
-      {
-        name: 'node2',
-        graffiti: '2',
-        port: '8002',
-        data_dir: '~/.ironfish_atf/node2',
-        netword_id: 2,
-      },
-      {
-        name: 'node3',
-        graffiti: '3',
-        port: '8003',
-        data_dir: '~/.ironfish_atf/node3',
-        netword_id: 2,
-      },
-    ]
-
     console.log('f')
 
+    // TODO: read config from `config.json` file before using config file
+    // TODO: abstract this into a node manager that owns the nodes
     const nodes = config.map((cfg) => {
       return new TestNode(cfg)
     })
 
-    await sleep(10 * second)
+    // // TODO: abstract this into a stop func
+    // for (const node of nodes) {
+    //   const { success, msg } = await node.stop()
+    //   if (!success) {
+    //     console.log(`[main]: error stopping node ${node.name}: ${msg}`)
+    //   } else {
+    //     console.log(`[main]: stopped node ${node.name} successfully`)
+    //   }
+    // }
 
-    for (const node of nodes) {
-      const { success, msg } = await node.stop()
-      if (!success) {
-        console.log(`[main]: error stopping node ${node.name}: ${msg}`)
-      } else {
-        console.log(`[main]: stopped node ${node.name} successfully`)
-      }
-    }
-    // press x to exit
+    console.log('atf is running')
+
+    await sleep(5 * second)
+
+    // wait for all nodes to be stopped
+    await Promise.all(
+      nodes.map((node) => {
+        return new Promise<void>((resolve, reject) => {
+          if (!node.alive()) {
+            resolve()
+          } else {
+            reject()
+          }
+        })
+      }),
+    )
+    console.log('stopping atf')
   }
 }
 
 const second = 1000
 
-function sleep(ms: number): Promise<void> {
+export function sleep(ms: number): Promise<void> {
   console.log(`sleeping...  ${ms / 1000}s`)
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
+
+export const config = [
+  {
+    name: 'node1',
+    graffiti: '1',
+    port: '8001',
+    data_dir: '~/.ironfish_atf/node1',
+    netword_id: 2,
+  },
+  {
+    name: 'node2',
+    graffiti: '2',
+    port: '8002',
+    data_dir: '~/.ironfish_atf/node2',
+    netword_id: 2,
+  },
+  {
+    name: 'node3',
+    graffiti: '3',
+    port: '8003',
+    data_dir: '~/.ironfish_atf/node3',
+    netword_id: 2,
+  },
+]
